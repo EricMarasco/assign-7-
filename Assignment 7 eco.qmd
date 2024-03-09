@@ -1,0 +1,197 @@
+---
+title: "Assignment 7 Eco"
+format: html
+editor: visual
+---
+
+```{r}
+
+library(mapview)
+library(terra)
+library(lidR)
+library(units)
+library(gstat)
+library(sp)
+library(raster)
+```
+
+**Question 1**
+
+```{r}
+
+las <- readLAS("Eric Marasco.las")
+
+```
+
+a\)
+
+```{r}
+number_points <- npoints(las)
+print(number_points)
+
+```
+
+b\)
+
+```{r}
+maximum_elevation <- max(las@data$Z)
+print(maximum_elevation)
+```
+
+**Question 2**
+
+a\)
+
+```{r}
+
+las_ground <- classify_ground(las, algorithm = csf())
+dem <- rasterize_terrain(las_ground, res = 1, algorithm = tin()) 
+plot(dem)
+dem_prod <- terrain(dem, v = c("slope", "aspect"), unit = "radians")
+dem_hillshade <- shade(slope = dem_prod$slope, aspect = dem_prod$aspect)
+plot(dem_hillshade, col = gray(0:30/30), legend = FALSE)
+```
+
+b\)
+
+```{r}
+las_pmf <- classify_ground(las, pmf(ws = 0.05, th = 0.15))
+pmf_dem<- grid_terrain(las_pmf, algorithm = tin(), res = 1)
+plot(pmf_dem)
+```
+
+c\)
+
+```{r}
+las_csfground <- classify_ground(las, csf())
+dem_idw <- rasterize_terrain(las_csfground, algorithm = knnidw(), res = 1)
+plot(dem_idw)
+```
+
+d\)
+
+The PMF algorithm uses a morphological filter approach to distinguish between ground and non-ground LiDAR points. It progressively applies a series of mathematical morphology operations (erosion and dilation) to the point cloud, aimed at removing non-ground objects (like vegetation and buildings) based on their elevation and size characteristics. The algorithm assumes that ground points form a more or less continuous surface that can be distinguished from above-ground objects by iteratively filtering out points that do not fit a morphological model of the ground.
+
+**Question 3**
+
+a\)
+
+```{r}
+las_normalized <- normalize_height(las_ground, algorithm = knnidw(k = 10, p = 2))
+plot(las_normalized)
+resolution <- 0.8
+las_chm <- rasterize_canopy(las_normalized, resolution, p2r())
+plot(las_chm)
+```
+
+b\)
+
+```{r}
+las_normalized <- normalize_height(las_ground, algorithm = tin())
+tin_chm <- grid_canopy(las_normalized, resolution, algorithm = dsmtin())
+plot(tin_chm)
+
+
+```
+
+c\)
+
+```{r}
+point2raster <- grid_canopy(las_normalized, resolution, p2r())
+plot(point2raster)
+
+```
+
+d\)
+
+The Inverse Distance Weighting (IDW) algorithm is a spatial interpolation method used to estimate unknown values at any location based on values from known points nearby. It operates on the principle that the influence of one point on another decreases with distance, meaning that closer points should have a more significant impact on the interpolated value than those further away. The fundamental concept of IDW is intuitive: it assumes that things that are close to one another are more alike than those that are further apart.
+
+**Question 4**
+
+a\)
+
+```{r}
+treetops <- locate_trees(las_normalized, lmf(5))
+las_its_dalponte <- segment_trees(las_normalized, dalponte2016(point2raster, treetops))
+algorithm <- dalponte2016(point2raster, treetops)
+las_trees <- segment_trees(las_normalized, algorithm)
+plot(las_normalized, bg = "black", size = 4)
+plot(las_trees)
+```
+
+b\)
+
+```{r}
+las_its_li <- segment_trees(las_normalized, li2012(dt1 = 1.5,speed_up = 10))
+
+plot(las_its_li, color = "treeID")
+```
+
+c\)
+
+```{r}
+
+treetops <- locate_trees(las_normalized, lmf(5))
+las_its_silva <- segment_trees(las_normalized, silva2016(point2raster, treetops))
+algorithm <- silva2016(point2raster, treetops,max_cr_factor = 0.6, exclusion = 0.3, ID = "treeID")
+las_trees <- segment_trees(las_normalized, algorithm)
+plot(las_normalized, bg = "white", size = 4)
+plot(las_trees)
+```
+
+d\)
+
+Silva2016 is specifically designed for tree segmentation within LiDAR point cloud data. This method employs a seed point plus Voronoi tessellation strategy (equivalent to a nearest neighbor approach) for segmenting individual trees from the surrounding point cloud. It's a technique aimed at isolating single trees in a forested environment from LiDAR data
+
+**Question 5**
+
+Dalponte method:
+
+```{r}
+metrics_dalponte <- crown_metrics(las_its_dalponte, .stdtreemetrics)
+print(metrics_dalponte)
+mapview(metrics_dalponte, zcol = "treeID")
+
+install_unit("stems")
+n_trees <- set_units(nrow(metrics_dalponte), "stems")
+print(n_trees)
+
+st_area(las_its_dalponte)
+pc_area <- set_units(st_area(las_its_dalponte), "ha")
+n_trees / pc_area
+
+```
+
+Li Method:
+
+```{r}
+metrics_li <- crown_metrics(las_its_li, .stdtreemetrics)
+print(metrics_li)
+mapview(metrics_li, zcol = "treeID")
+
+
+n_trees <- set_units(nrow(metrics_li), "stems")
+print(n_trees)
+
+st_area(las_its_li)
+pc_area <- set_units(st_area(las_its_li), "ha")
+n_trees / pc_area
+
+```
+
+Silva Method
+
+```{r}
+metrics_silva <- crown_metrics(las_its_silva, .stdtreemetrics)
+print(metrics_silva)
+mapview(metrics_silva, zcol = "treeID")
+
+
+
+n_trees <- set_units(nrow(metrics_silva), "stems")
+print(n_trees)
+
+st_area(las_its_silva)
+pc_area <- set_units(st_area(las_its_silva), "ha")
+n_trees / pc_area
+```
